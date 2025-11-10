@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { dbConnect } from '@/lib/mongoose'
 import Hostel from '@/models/hostel'
 import { getUserFromRequest } from '@/lib/auth'
+import { MongoClient } from 'mongodb'
 
 const CreateHostelSchema = z.object({
   name: z.string().min(1),
@@ -83,6 +84,42 @@ export async function POST(req: Request) {
       createPayload.passwordSetAt = new Date()
 
       const created = await Hostel.create(createPayload)
+
+      // Create attendance log collection for this hostel
+      try {
+        const mongoUri = process.env.MONGODB_URI
+        const mongoDb = process.env.MONGODB_DB || 'HMS'
+
+        if (mongoUri && created.name) {
+          const client = new MongoClient(mongoUri)
+          await client.connect()
+
+          try {
+            const db = client.db(mongoDb)
+
+            // Sanitize hostel name for collection name
+            const sanitizedName = String(created.name).replace(/[^a-zA-Z0-9]/g, '_')
+            const collectionName = `${sanitizedName}_attendance_logs`
+
+            // Create the collection
+            await db.createCollection(collectionName)
+
+            // Create unique index for idempotent inserts
+            const collection = db.collection(collectionName)
+            await collection.createIndex(
+              { device_ip: 1, user_id: 1, timestamp_utc: 1 },
+              { unique: true, name: 'uniq_device_user_ts' }
+            )
+
+            console.log(`[Hostel Create] Created attendance collection: ${collectionName}`)
+          } finally {
+            await client.close()
+          }
+        }
+      } catch (collErr) {
+        // Log error but don't fail the hostel creation
+        console.error('[Hostel Create] Failed to create attendance collection:', collErr)
+      }
 
       // Send email to hostel admin (with temporary password) if contactEmail present
       try {

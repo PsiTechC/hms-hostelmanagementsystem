@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Sidebar } from "@/components/dashboard/sidebar"
 import { SuperAdminDashboard } from "@/components/dashboards/super-admin-dashboard"
 import { HostelAdminDashboard } from "@/components/dashboards/hostel-admin-dashboard"
@@ -13,12 +13,83 @@ import { LogOut, Moon, Sun } from "lucide-react"
 
 interface DashboardProps {
   role: string | null
+  user: { id: string; email: string; role?: string; name?: string; hostelId?: string } | null
   onLogout: () => void
 }
 
-export function Dashboard({ role, onLogout }: DashboardProps) {
+export function Dashboard({ role, user, onLogout }: DashboardProps) {
   const [activeSection, setActiveSection] = useState("overview")
   const [isDarkMode, setIsDarkMode] = useState(true)
+  const [hostelName, setHostelName] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
+
+  // Fetch hostel name and user details
+  useEffect(() => {
+    const fetchUserDetails = async () => {
+      if (!user) return
+
+      try {
+        const token = localStorage.getItem('token')
+        if (!token) return
+
+        // Fetch user profile based on role
+        if (role === 'hostel-admin') {
+          // Hostel admin: fetch hostel data
+          const res = await fetch('/api/hostel-admin/hostel', {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+
+          if (res.ok) {
+            const data = await res.json()
+            setUserName(data.hostel?.adminName || user.email)
+            setHostelName(data.hostel?.name || 'Hostel')
+          }
+        } else if (role === 'warden' || role === 'staff' || role === 'student') {
+          // For other roles, use their profile endpoint (if exists)
+          const profileMap: Record<string, string> = {
+            'warden': '/api/warden/profile',
+            'staff': '/api/staff/profile',
+            'student': '/api/student/profile'
+          }
+
+          const profileEndpoint = profileMap[role]
+          if (profileEndpoint) {
+            const res = await fetch(profileEndpoint, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+
+            if (res.ok) {
+              const data = await res.json()
+              setUserName(data.name || user.email)
+
+              // Extract hostel name
+              if (data.hostel?.name) {
+                setHostelName(data.hostel.name)
+              } else if (data.hostelId) {
+                // Fetch hostel details if only ID is available
+                const hostelRes = await fetch(`/api/hostel/${data.hostelId}`, {
+                  headers: { Authorization: `Bearer ${token}` }
+                })
+                if (hostelRes.ok) {
+                  const hostelData = await hostelRes.json()
+                  setHostelName(hostelData.name)
+                }
+              }
+            }
+          }
+        } else if (role === 'super-admin') {
+          setUserName('Super Admin')
+          setHostelName('All Hostels')
+          return
+        }
+      } catch (error) {
+        console.error('Failed to fetch user details:', error)
+        setUserName(user.email)
+      }
+    }
+
+    fetchUserDetails()
+  }, [user, role])
 
   const renderDashboard = () => {
     switch (role) {
@@ -60,8 +131,12 @@ export function Dashboard({ role, onLogout }: DashboardProps) {
         {/* Top Bar */}
         <div className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground capitalize">{role?.replace("-", " ")} Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Welcome back to HMS</p>
+            <h1 className="text-2xl font-bold text-foreground">
+              {hostelName || 'Loading...'}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {userName || user?.email || 'User'} • {role?.replace("-", " ").split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <Button

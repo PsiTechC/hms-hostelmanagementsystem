@@ -250,15 +250,66 @@ export function Devices() {
 function AddDeviceButton({ onSaved }: { onSaved?: () => void }) {
   const form = useForm({ defaultValues: { name: '', ip: '', port: 4370 } })
   const [open, setOpen] = useState(false)
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
+  const [testMessage, setTestMessage] = useState<string>('')
+  const [deviceInfo, setDeviceInfo] = useState<any>(null)
+
+  const testConnection = async () => {
+    const ip = form.getValues('ip')
+    const port = form.getValues('port')
+
+    if (!ip) {
+      setTestStatus('error')
+      setTestMessage('Please enter an IP address first')
+      return
+    }
+
+    setTestStatus('testing')
+    setTestMessage('Testing connection...')
+    setDeviceInfo(null)
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const res = await fetch('/api/hostel-admin/devices/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ip, port }),
+      })
+
+      const data = await res.json()
+
+      if (data.success) {
+        setTestStatus('success')
+        setTestMessage('Connection successful! Device is online and reachable.')
+        setDeviceInfo(data.deviceInfo)
+      } else {
+        setTestStatus('error')
+        setTestMessage(data.message)
+      }
+    } catch (e) {
+      setTestStatus('error')
+      setTestMessage(`Connection test failed: ${String(e)}`)
+    }
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => {
+      setOpen(v)
+      if (!v) {
+        setTestStatus('idle')
+        setTestMessage('')
+        setDeviceInfo(null)
+      }
+    }}>
       <DialogTrigger asChild>
         <Button variant="default">Add Device</Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogTitle>Add Biometric Device</DialogTitle>
-        <DialogDescription>Enter device details and save to register with this hostel.</DialogDescription>
+        <DialogDescription>Test the connection first, then save to register with this hostel.</DialogDescription>
 
         <Form {...form}>
           <form
@@ -275,6 +326,9 @@ function AddDeviceButton({ onSaved }: { onSaved?: () => void }) {
                 })
                 if (res.ok) {
                   form.reset()
+                  setTestStatus('idle')
+                  setTestMessage('')
+                  setDeviceInfo(null)
                   if (onSaved) onSaved()
                   setOpen(false)
                 } else {
@@ -289,22 +343,67 @@ function AddDeviceButton({ onSaved }: { onSaved?: () => void }) {
           >
             <div>
               <label className="text-sm text-muted-foreground">Device Name</label>
-              <Input {...form.register('name', { required: true })} />
+              <Input {...form.register('name', { required: true })} placeholder="e.g., Main Entrance" />
             </div>
 
             <div>
-              <label className="text-sm text-muted-foreground">Device IP</label>
-              <Input {...form.register('ip', { required: true })} />
+              <label className="text-sm text-muted-foreground">Device IP Address</label>
+              <Input {...form.register('ip', { required: true })} placeholder="e.g., 192.168.1.250" />
             </div>
 
             <div>
               <label className="text-sm text-muted-foreground">Port</label>
-              <Input type="number" {...form.register('port', { valueAsNumber: true })} />
+              <Input type="number" {...form.register('port', { valueAsNumber: true })} placeholder="4370" />
+            </div>
+
+            <div className="border rounded-lg p-4 bg-muted/20">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium">Connection Test</h4>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={testConnection}
+                  disabled={testStatus === 'testing'}
+                  className="hover:bg-cyan-500/20 hover:text-cyan-400"
+                >
+                  {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+                </Button>
+              </div>
+
+              {testMessage && (
+                <div className={`text-sm mt-2 p-3 rounded ${
+                  testStatus === 'success' ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20' :
+                  testStatus === 'error' ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' :
+                  'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                }`}>
+                  {testMessage}
+                </div>
+              )}
+
+              {deviceInfo && (
+                <div className="mt-3 p-3 bg-background rounded border text-sm space-y-1">
+                  <p><strong>Serial Number:</strong> {deviceInfo.serialNumber}</p>
+                  <p><strong>Version:</strong> {deviceInfo.version}</p>
+                  <p><strong>IP:</strong> {deviceInfo.ip}:{deviceInfo.port}</p>
+                </div>
+              )}
+
+              {testStatus === 'idle' && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Test the connection before saving to ensure the device is reachable
+                </p>
+              )}
             </div>
 
             <DialogFooter className="flex items-center gap-2">
-              <Button type="submit">Save</Button>
-              <Button variant="outline" onClick={() => form.reset()}>Reset</Button>
+              <Button type="submit" disabled={testStatus === 'testing'}>Save Device</Button>
+              <Button type="button" variant="outline" onClick={() => {
+                form.reset()
+                setTestStatus('idle')
+                setTestMessage('')
+                setDeviceInfo(null)
+              }}>Reset</Button>
             </DialogFooter>
           </form>
         </Form>

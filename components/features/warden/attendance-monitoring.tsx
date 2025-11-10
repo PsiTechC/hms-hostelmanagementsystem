@@ -12,6 +12,7 @@ export function AttendanceMonitoring() {
   const [loading, setLoading] = useState(false)
   const [hostelNightIn, setHostelNightIn] = useState<string | null>(null)
   const [autoSendEnabled, setAutoSendEnabled] = useState(false)
+  const [autoSendMode, setAutoSendMode] = useState<'frontend' | 'backend' | 'disabled'>('frontend')
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   // Track sent events by unique key: studentId + checkInTime
   const sentEventsRef = useRef<Set<string>>(new Set())
@@ -183,6 +184,27 @@ export function AttendanceMonitoring() {
     }
   }, [])
 
+  // Load auto-send settings on mount
+  useEffect(() => {
+    const loadAutoSendSettings = async () => {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+        const res = await fetch('/api/warden/auto-send-toggle', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setAutoSendMode(data.autoSendMode || 'frontend')
+          setAutoSendEnabled(data.autoSendEnabled || false)
+          console.log('[Auto-send] Loaded settings:', data)
+        }
+      } catch (e) {
+        console.error('[Auto-send] Failed to load settings:', e)
+      }
+    }
+    loadAutoSendSettings()
+  }, [])
+
   // Initial load on mount
   useEffect(() => {
     loadAttendance()
@@ -216,9 +238,9 @@ export function AttendanceMonitoring() {
     return () => clearInterval(interval)
   }, [])
 
-  // Auto-send WhatsApp alerts for newly late check-in events
+  // Auto-send WhatsApp alerts for newly late check-in events (ONLY for frontend mode)
   useEffect(() => {
-    if (!autoSendEnabled) return
+    if (!autoSendEnabled || autoSendMode !== 'frontend') return
 
     const sendAutoAlerts = async () => {
       // Find students with late check-ins that haven't been alerted yet
@@ -280,7 +302,37 @@ export function AttendanceMonitoring() {
     }
 
     sendAutoAlerts()
-  }, [attendanceRecords, autoSendEnabled])
+  }, [attendanceRecords, autoSendEnabled, autoSendMode])
+
+  // Handle toggle change - update database
+  const handleAutoSendToggle = async (enabled: boolean) => {
+    setAutoSendEnabled(enabled)
+
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+      const res = await fetch('/api/warden/auto-send-toggle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ enabled })
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        console.log('[Auto-send] Toggle updated:', data)
+      } else {
+        console.error('[Auto-send] Failed to update toggle')
+        // Revert on error
+        setAutoSendEnabled(!enabled)
+      }
+    } catch (e) {
+      console.error('[Auto-send] Toggle error:', e)
+      // Revert on error
+      setAutoSendEnabled(!enabled)
+    }
+  }
 
   // Manual send WhatsApp alerts
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
@@ -339,9 +391,14 @@ export function AttendanceMonitoring() {
         <p className="text-xs text-muted-foreground mt-1">
           Last refreshed: {lastRefresh.toLocaleTimeString()} (auto-refreshes every 5s)
         </p>
-        {autoSendEnabled && (
+        {autoSendEnabled && autoSendMode === 'frontend' && (
+          <p className="text-xs text-yellow-400 mt-1">
+            ⚠️ Auto-send WhatsApp enabled (Frontend Mode - requires page open)
+          </p>
+        )}
+        {autoSendEnabled && autoSendMode === 'backend' && (
           <p className="text-xs text-green-400 mt-1">
-            ✓ Auto-send WhatsApp enabled - Monitoring for late check-ins
+            ✓ Auto-send WhatsApp enabled (Backend Mode - 24/7 active)
           </p>
         )}
       </div>
@@ -351,10 +408,12 @@ export function AttendanceMonitoring() {
           <Switch
             id="auto-send"
             checked={autoSendEnabled}
-            onCheckedChange={setAutoSendEnabled}
+            onCheckedChange={handleAutoSendToggle}
           />
           <Label htmlFor="auto-send" className="text-sm">
             Auto-send WhatsApp alerts for late students
+            {autoSendMode === 'backend' && <span className="text-xs text-blue-400 ml-2">(Server-side 24/7)</span>}
+            {autoSendMode === 'frontend' && <span className="text-xs text-yellow-400 ml-2">(Page-based)</span>}
           </Label>
         </div>
 

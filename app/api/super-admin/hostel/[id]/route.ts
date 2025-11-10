@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { dbConnect } from '@/lib/mongoose'
 import Hostel from '@/models/hostel'
 import { getUserFromRequest } from '@/lib/auth'
+import { MongoClient } from 'mongodb'
 
 const UpdateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -30,6 +31,10 @@ export async function PATCH(req: Request, { params }: { params: { id?: string } 
 
     await dbConnect()
 
+    // Get the existing hostel to check if name is changing
+    const existingHostel = await Hostel.findById(id).lean()
+    if (!existingHostel) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     const d: any = parsed.data
     const updatePayload: any = {}
     if (d.name !== undefined) updatePayload.name = d.name
@@ -45,6 +50,51 @@ export async function PATCH(req: Request, { params }: { params: { id?: string } 
 
     const updated = await Hostel.findByIdAndUpdate(id, updatePayload, { new: true }).lean()
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    // If name changed, rename the attendance collection
+    if (d.name !== undefined && existingHostel.name !== d.name) {
+      try {
+        const mongoUri = process.env.MONGODB_URI
+        const mongoDb = process.env.MONGODB_DB || 'HMS'
+
+        if (mongoUri) {
+          const client = new MongoClient(mongoUri)
+          await client.connect()
+
+          try {
+            const db = client.db(mongoDb)
+
+            const oldName = String(existingHostel.name).replace(/[^a-zA-Z0-9]/g, '_')
+            const newName = String(d.name).replace(/[^a-zA-Z0-9]/g, '_')
+            const oldCollectionName = `${oldName}_attendance_logs`
+            const newCollectionName = `${newName}_attendance_logs`
+
+            // Check if old collection exists
+            const collections = await db.listCollections({ name: oldCollectionName }).toArray()
+
+            if (collections.length > 0) {
+              // Rename the collection
+              await db.collection(oldCollectionName).rename(newCollectionName)
+              console.log(`[Hostel Update] Renamed attendance collection: ${oldCollectionName} -> ${newCollectionName}`)
+            } else {
+              // Old collection doesn't exist, create new one
+              await db.createCollection(newCollectionName)
+              const collection = db.collection(newCollectionName)
+              await collection.createIndex(
+                { device_ip: 1, user_id: 1, timestamp_utc: 1 },
+                { unique: true, name: 'uniq_device_user_ts' }
+              )
+              console.log(`[Hostel Update] Created new attendance collection: ${newCollectionName}`)
+            }
+          } finally {
+            await client.close()
+          }
+        }
+      } catch (collErr) {
+        // Log error but don't fail the update
+        console.error('[Hostel Update] Failed to rename attendance collection:', collErr)
+      }
+    }
 
     const result = { ...(updated as any) }
     if (result.passwordHash) delete result.passwordHash

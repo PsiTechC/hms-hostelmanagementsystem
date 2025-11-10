@@ -4,10 +4,17 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "concurrently \"next dev\" \"tsx watch scripts/background-worker.ts\" \"tsx watch scripts/zk-device-worker.ts\"",
+    "dev:web": "next dev",
+    "dev:whatsapp": "tsx watch scripts/background-worker.ts",
+    "dev:zk": "tsx watch scripts/zk-device-worker.ts",
+    "dev:workers": "concurrently \"tsx watch scripts/background-worker.ts\" \"tsx watch scripts/zk-device-worker.ts\"",
     "lint": "eslint .",
-    "start":"next start"
-    
+    "start": "concurrently \"next start\" \"tsx scripts/background-worker.ts\" \"tsx scripts/zk-device-worker.ts\"",
+    "start:web": "next start",
+    "start:whatsapp": "tsx scripts/background-worker.ts",
+    "start:zk": "tsx scripts/zk-device-worker.ts",
+    "start:workers": "concurrently \"tsx scripts/background-worker.ts\" \"tsx scripts/zk-device-worker.ts\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -55,6 +62,7 @@
     "mongoose": "^8.19.2",
     "next": "15.5.2",
     "next-themes": "^0.4.6",
+    "node-cron": "^4.2.1",
     "node-zklib": "^1.3.0",
     "nodemailer": "^7.0.10",
     "pino": "^10.1.0",
@@ -67,6 +75,7 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
+    "zkteco-js": "^1.7.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -74,14 +83,16 @@
     "@types/bcrypt": "^6.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22",
+    "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^7.0.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-  "postcss": "^8.5",
-  "concurrently": "^8.2.0",
+    "concurrently": "^8.2.2",
+    "patch-package": "^8.0.1",
+    "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
+    "tsx": "^4.20.6",
     "tw-animate-css": "1.3.3",
     "typescript": "^5"
   }
-
 }

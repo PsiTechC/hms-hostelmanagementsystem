@@ -34,5 +34,5 @@ export default function Home() {
     return <LoginForm onLogin={handleLogin} />
   }
 
-  return <Dashboard role={userRole} onLogout={handleLogout} />
+  return <Dashboard role={userRole} user={user} onLogout={handleLogout} />
 }

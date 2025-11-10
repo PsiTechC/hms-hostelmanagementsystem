@@ -15,6 +15,15 @@ export interface IHostel extends Document {
   occupied?: number
   contactEmail?: string
   contactPhone?: string
+  // Auto-send WhatsApp configuration
+  autoSendMode?: 'frontend' | 'backend' | 'disabled'
+  autoSendEnabled?: boolean
+  sentEventsList?: Array<{
+    studentId: string
+    checkInTime: string
+    sentAt: Date
+  }>
+  lastAutoSendCheck?: Date
   createdAt: Date
   updatedAt: Date
   // temporary password (stored hashed) for hostel admin login
@@ -39,6 +48,15 @@ const HostelSchema = new Schema<IHostel>(
     totalRooms: { type: Number, default: 0 },
     capacityUnlimited: { type: Boolean, default: false },
     capacity: { type: Number, default: 0 },
+    // Auto-send WhatsApp configuration
+    autoSendMode: { type: String, enum: ['frontend', 'backend', 'disabled'], default: 'frontend' },
+    autoSendEnabled: { type: Boolean, default: false },
+    sentEventsList: [{
+      studentId: { type: String },
+      checkInTime: { type: String },
+      sentAt: { type: Date, default: Date.now }
+    }],
+    lastAutoSendCheck: { type: Date },
     // Store hashed temporary password for admin login. Mark select:false so it
     // is not returned by default in queries / toObject() unless explicitly
     // requested.
